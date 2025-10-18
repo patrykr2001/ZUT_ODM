@@ -2,8 +2,8 @@
 #include <thread>
 #include <vector>
 
-const int num_threads = 4;
-const int N = 1000;
+const int num_threads = 1;
+const int N = 2048;
 int A[N][N], B[N][N], C[N][N];
 
 void func(int tid) {
@@ -24,6 +24,8 @@ void func(int tid) {
 int main() {
     std::vector<std::thread> threads;
 
+    const auto start{std::chrono::steady_clock::now()};
+
     for (int i = 0; i < num_threads; ++i) {
         threads.push_back(std::thread(func, i));
     }
@@ -31,6 +33,11 @@ int main() {
     for (auto& t : threads) {
         t.join();
     }
+
+    const auto finish{std::chrono::steady_clock::now()};
+    const std::chrono::duration<double> elapsed_seconds{finish - start};
+
+    std::cout << "Elapsed time: " << elapsed_seconds.count() << "s\n";
 
     return 0;
 }
