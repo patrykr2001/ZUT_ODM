@@ -4,7 +4,7 @@
 
 int num_threads = 1;
 const int N = 4096;
-int A[N][N], B[N][N], C[N][N];
+int A[N][N], B[N][N], C[N][N], BT[N][N];
 
 void func(int tid) {
     int i, j, k;
@@ -15,13 +15,19 @@ void func(int tid) {
         for(j = 0; j < N; j++) {
             C[i][j] = 0;
             for(k = 0; k < N; k++) {
-                C[i][j] += A[i][k] * B[k][j];
+                C[i][j] += A[i][k] * BT[j][k];
             }
         }
     }
 }
 
 int main() {
+    for(int i = 0; i < N; i++){
+        for(int j = 0; j < N; j++){
+            BT[i][j] = B[j][i];
+        }
+    }
+
     for(int v = 1; v <= 16; v *= 2) {
         num_threads = v;
         std::vector<std::thread> threads;
