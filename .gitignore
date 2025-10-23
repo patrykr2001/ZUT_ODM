@@ -78,3 +78,7 @@ cmake-build-*/
 # OS generated files
 .DS_Store
 Thumbs.db
+
+*.pdf
+*.doc
+*.odt

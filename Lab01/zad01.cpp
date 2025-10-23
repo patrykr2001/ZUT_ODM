@@ -3,7 +3,7 @@
 #include <vector>
 
 int num_threads = 1;
-const int N = 4096;
+const int N = 2048;
 int A[N][N], B[N][N], C[N][N], BT[N][N];
 
 // Dynamic arrays for funcDynamic
