@@ -42,11 +42,11 @@
  double ER2 = EscapeRadius * EscapeRadius;
 
  // Number of test configurations
- const int numConfigs = 5; // 1, 2, 4, 8, 16 threads
+ const int numConfigs = 7; // 1, 2, 4, 8, 16, 32, 64 threads
 
  // Allocate memory for all images - array of pointers to images
  unsigned char* images[numConfigs];
- int threadCounts[numConfigs] = {1, 2, 4, 8, 16};
+ int threadCounts[numConfigs] = {1, 2, 4, 8, 16, 32, 64};
  long long executionTimes[numConfigs];
 
  // Function to compute a range of rows for the Mandelbrot set
@@ -139,7 +139,7 @@
         
         // Loop through different thread counts: 1, 2, 4, 8, 16
         int configIndex = 0;
-        for (unsigned int numThreads = 1; numThreads <= 16; numThreads *= 2)
+        for (unsigned int numThreads = 1; numThreads <= 64; numThreads *= 2)
         {
             printf("\n=== Testing with %d thread(s) ===\n", numThreads);
             
