@@ -292,19 +292,7 @@ int main()
             bestIdx = i;
     }
     
-    printf("\n=== Analysis ===\n");
     printf("Best schedule: %s (%.3f seconds)\n", scheduleNames[bestIdx], executionTimes[bestIdx]);
-    printf("\nWHY STATIC SCHEDULE IS INEFFICIENT FOR MANDELBROT:\n");
-    printf("- Static schedule divides rows equally among threads\n");
-    printf("- But computation time varies greatly between rows!\n");
-    printf("- Top/bottom rows (far from Mandelbrot set) = fast\n");
-    printf("- Middle rows (near the boundary) = VERY SLOW\n");
-    printf("- With static schedule, some threads finish early and wait\n");
-    printf("- This causes load imbalance = poor performance\n");
-    printf("\nDynamic/Guided schedules work better because:\n");
-    printf("- Threads get new work when they finish\n");
-    printf("- Better load balancing = better performance\n");
-    printf("\nCheck the colored images to SEE the thread distribution!\n");
     
     return 0;
 }
