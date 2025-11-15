@@ -4,16 +4,21 @@
 #include <stdlib.h>
 
 // Global variables
-const int SIZE = 9999;  // Size of the spiral (should be odd for centered spiral)
+const int SIZE = 9999;  // Size of the spiral
 const int iXmax = SIZE; 
 const int iYmax = SIZE;
 
+// Configuration for nested parallel regions
+const int THREADS_X = 2;  // Number of threads in X direction
+const int THREADS_Y = 2;  // Number of threads in Y direction
+const int TOTAL_THREADS = THREADS_X * THREADS_Y;
+
 // Color definitions
 const int MaxColorComponentValue = 255; 
-char *comment = "# Ulam Spiral - OpenMP with quadrant division";
 
-// Image buffer
-unsigned char* image;
+// Image buffers for comparison
+unsigned char* imageNested;
+unsigned char* imageHorizontal;
 
 // Function to check if a number is prime
 bool isPrime(long long n)
@@ -31,40 +36,31 @@ bool isPrime(long long n)
 }
 
 // Function to calculate spiral coordinates and return the number at position (x, y)
-// Using the Ulam spiral algorithm
 long long getSpiralNumber(int x, int y)
 {
-    // Convert to centered coordinates
     int cx = x - SIZE / 2;
     int cy = y - SIZE / 2;
     
-    // Determine which "ring" we're on
     int ring = (int)fmax(abs(cx), abs(cy));
     
-    if (ring == 0) return 1; // Center
+    if (ring == 0) return 1;
     
-    // Calculate the number at this position
-    // The spiral starts at 1 in the center and goes right, then spirals counter-clockwise
     long long maxNumInPrevRing = (2 * ring - 1) * (2 * ring - 1);
     long long numInRing = maxNumInPrevRing;
     
-    // We're on the right edge of the ring
     if (cx == ring)
     {
         numInRing += ring + cy;
     }
-    // Top edge
     else if (cy == ring)
     {
         numInRing += 3 * ring - cx;
     }
-    // Left edge
     else if (cx == -ring)
     {
         numInRing += 5 * ring - cy;
     }
-    // Bottom edge
-    else // cy == -ring
+    else
     {
         numInRing += 7 * ring + cx;
     }
@@ -72,51 +68,24 @@ long long getSpiralNumber(int x, int y)
     return numInRing;
 }
 
-// Function to compute one quadrant of the spiral
-// quadrant: 0=top-right, 1=top-left, 2=bottom-left, 3=bottom-right
-void computeQuadrant(int quadrant, int threadId)
+// Function to compute one block with nested parallelism
+void computeQuadrantNested(int blockX, int blockY, unsigned char* image)
 {
-    int startX, endX, startY, endY;
-    
     int midX = SIZE / 2;
     int midY = SIZE / 2;
     
-    // Define quadrant boundaries
-    switch(quadrant)
-    {
-        case 0: // Top-right
-            startX = midX;
-            endX = SIZE;
-            startY = 0;
-            endY = midY;
-            break;
-        case 1: // Top-left
-            startX = 0;
-            endX = midX;
-            startY = 0;
-            endY = midY;
-            break;
-        case 2: // Bottom-left
-            startX = 0;
-            endX = midX;
-            startY = midY;
-            endY = SIZE;
-            break;
-        case 3: // Bottom-right
-            startX = midX;
-            endX = SIZE;
-            startY = midY;
-            endY = SIZE;
-            break;
-    }
+    int startX = blockX * midX;
+    int endX = (blockX + 1) * midX;
+    int startY = blockY * midY;
+    int endY = (blockY + 1) * midY;
     
-    // Generate a unique color for this thread/quadrant
+    int threadId = blockY * THREADS_X + blockX;
+    
     unsigned char threadColor[3];
     float hue = (float)threadId / 4.0f;
     float saturation = 1.0f;
     float value = 1.0f;
     
-    // Simple HSV to RGB conversion
     int h_i = (int)(hue * 6);
     float f = hue * 6 - h_i;
     float p = value * (1 - saturation);
@@ -124,7 +93,8 @@ void computeQuadrant(int quadrant, int threadId)
     float t = value * (1 - (1 - f) * saturation);
     
     float r, g, b;
-    switch(h_i) {
+    switch(h_i)
+    {
         case 0: r = value; g = t; b = p; break;
         case 1: r = q; g = value; b = p; break;
         case 2: r = p; g = value; b = t; break;
@@ -137,7 +107,6 @@ void computeQuadrant(int quadrant, int threadId)
     threadColor[1] = (unsigned char)(g * 255);
     threadColor[2] = (unsigned char)(b * 255);
     
-    // Process each pixel in this quadrant
     for (int y = startY; y < endY; y++)
     {
         for (int x = startX; x < endX; x++)
@@ -147,14 +116,67 @@ void computeQuadrant(int quadrant, int threadId)
             
             if (isPrime(num))
             {
-                // Prime numbers - colored by quadrant
-                image[pixelIndex] = threadColor[0];     // Red
-                image[pixelIndex + 1] = threadColor[1]; // Green
-                image[pixelIndex + 2] = threadColor[2]; // Blue
+                image[pixelIndex] = threadColor[0];
+                image[pixelIndex + 1] = threadColor[1];
+                image[pixelIndex + 2] = threadColor[2];
             }
             else
             {
-                // Non-prime numbers - dark gray
+                image[pixelIndex] = 50;
+                image[pixelIndex + 1] = 50;
+                image[pixelIndex + 2] = 50;
+            }
+        }
+    }
+}
+
+// Function to compute horizontal strips
+void computeHorizontalStrip(int stripId, int numStrips, unsigned char* image)
+{
+    int startY = (SIZE * stripId) / numStrips;
+    int endY = (SIZE * (stripId + 1)) / numStrips;
+    
+    unsigned char threadColor[3];
+    float hue = (float)stripId / (float)numStrips;
+    float saturation = 1.0f;
+    float value = 1.0f;
+    
+    int h_i = (int)(hue * 6);
+    float f = hue * 6 - h_i;
+    float p = value * (1 - saturation);
+    float q = value * (1 - f * saturation);
+    float t = value * (1 - (1 - f) * saturation);
+    
+    float r, g, b;
+    switch(h_i)
+    {
+        case 0: r = value; g = t; b = p; break;
+        case 1: r = q; g = value; b = p; break;
+        case 2: r = p; g = value; b = t; break;
+        case 3: r = p; g = q; b = value; break;
+        case 4: r = t; g = p; b = value; break;
+        default: r = value; g = p; b = q; break;
+    }
+    
+    threadColor[0] = (unsigned char)(r * 255);
+    threadColor[1] = (unsigned char)(g * 255);
+    threadColor[2] = (unsigned char)(b * 255);
+    
+    for (int y = startY; y < endY; y++)
+    {
+        for (int x = 0; x < SIZE; x++)
+        {
+            long long num = getSpiralNumber(x, y);
+            int pixelIndex = (y * SIZE + x) * 3;
+            
+            if (isPrime(num))
+            {
+                image[pixelIndex] = threadColor[0];
+                image[pixelIndex + 1] = threadColor[1];
+                image[pixelIndex + 2] = threadColor[2];
+            }
+            else
+            {
                 image[pixelIndex] = 50;
                 image[pixelIndex + 1] = 50;
                 image[pixelIndex + 2] = 50;
@@ -165,78 +187,124 @@ void computeQuadrant(int quadrant, int threadId)
 
 int main()
 {
-    printf("\n=== Ulam Spiral Generator with OpenMP (Quadrant Division) ===\n");
+    printf("\n=== Ulam Spiral - Comparison: Nested vs Horizontal Parallelism ===\n");
     printf("Image resolution: %d x %d pixels\n", SIZE, SIZE);
-    printf("Using 4 threads (one per quadrant)\n\n");
+    printf("Comparing 2x2 nested parallelism vs 4-thread horizontal division\n\n");
     
-    // Allocate memory for the image
-    image = new unsigned char[SIZE * SIZE * 3];
+    imageNested = new unsigned char[SIZE * SIZE * 3];
+    imageHorizontal = new unsigned char[SIZE * SIZE * 3];
     
-    // Initialize image to white
     for (int i = 0; i < SIZE * SIZE * 3; i++)
     {
-        image[i] = 255;
+        imageNested[i] = 50;
+        imageHorizontal[i] = 50;
     }
     
-    // Set number of threads to 4 (one per quadrant)
-    omp_set_num_threads(4);
+    // Method 1: Nested Parallelism (2x2 blocks)
+    printf("=== Method 1: Nested Parallelism (2x2 blocks) ===\n");
     
-    double startTime = omp_get_wtime();
+    omp_set_nested(1);
     
-    // Parallel computation - each thread processes one quadrant
+    double startTimeNested = omp_get_wtime();
+    
+    #pragma omp parallel for num_threads(THREADS_Y)
+    for (int blockY = 0; blockY < THREADS_Y; blockY++)
+    {
+        #pragma omp parallel for num_threads(THREADS_X)
+        for (int blockX = 0; blockX < THREADS_X; blockX++)
+        {
+            #pragma omp critical
+            {
+                printf("Processing block (%d, %d)\n", blockX, blockY);
+            }
+            
+            computeQuadrantNested(blockX, blockY, imageNested);
+        }
+    }
+    
+    double endTimeNested = omp_get_wtime();
+    double durationNested = endTimeNested - startTimeNested;
+    
+    printf("Nested parallelism complete in %.3f seconds\n\n", durationNested);
+    
+    // Method 2: Horizontal Division
+    printf("=== Method 2: Horizontal Division (%d threads) ===\n", TOTAL_THREADS);
+    
+    omp_set_nested(0);
+    omp_set_num_threads(TOTAL_THREADS);
+    
+    double startTimeHorizontal = omp_get_wtime();
+    
     #pragma omp parallel
     {
         int threadId = omp_get_thread_num();
         
         #pragma omp single
         {
-            printf("Starting computation with %d threads...\n", omp_get_num_threads());
+            printf("Starting horizontal computation with %d threads...\n", omp_get_num_threads());
         }
         
-        // Each thread computes its assigned quadrant
-        computeQuadrant(threadId, threadId);
+        computeHorizontalStrip(threadId, TOTAL_THREADS, imageHorizontal);
         
         #pragma omp critical
         {
-            printf("Thread %d finished quadrant %d\n", threadId, threadId);
+            printf("Thread %d finished strip %d\n", threadId, threadId);
         }
     }
     
-    double endTime = omp_get_wtime();
-    double duration = endTime - startTime;
+    double endTimeHorizontal = omp_get_wtime();
+    double durationHorizontal = endTimeHorizontal - startTimeHorizontal;
     
-    printf("\nComputation complete in %.3f seconds\n", duration);
+    printf("Horizontal division complete in %.3f seconds\n\n", durationHorizontal);
     
-    // Write image to file
-    printf("Writing image to file...\n");
+    // Write images
+    printf("=== Writing images to files ===\n");
     
-    char filename[] = "ulam_spiral_quadrants.ppm";
-    FILE* fp = fopen(filename, "wb");
-    
-    if (fp == NULL)
+    char filename1[] = "ulam_spiral_nested_2x2.ppm";
+    FILE* fp1 = fopen(filename1, "wb");
+    if (fp1 != NULL)
     {
-        printf("Error: Could not create file %s\n", filename);
-        delete[] image;
-        return 1;
+        fprintf(fp1, "P6\n# Nested 2x2\n%d\n%d\n%d\n", SIZE, SIZE, MaxColorComponentValue);
+        fwrite(imageNested, 1, SIZE * SIZE * 3, fp1);
+        fclose(fp1);
+        printf("Nested image saved to %s\n", filename1);
     }
     
-    // Write PPM header
-    fprintf(fp, "P6\n%s\n%d\n%d\n%d\n", comment, SIZE, SIZE, MaxColorComponentValue);
+    char filename2[] = "ulam_spiral_horizontal_4.ppm";
+    FILE* fp2 = fopen(filename2, "wb");
+    if (fp2 != NULL)
+    {
+        fprintf(fp2, "P6\n# Horizontal 4\n%d\n%d\n%d\n", SIZE, SIZE, MaxColorComponentValue);
+        fwrite(imageHorizontal, 1, SIZE * SIZE * 3, fp2);
+        fclose(fp2);
+        printf("Horizontal image saved to %s\n", filename2);
+    }
     
-    // Write image data
-    fwrite(image, 1, SIZE * SIZE * 3, fp);
+    delete[] imageNested;
+    delete[] imageHorizontal;
     
-    fclose(fp);
+    // Performance Summary
+    printf("\n=== Performance Summary ===\n");
+    printf("Method                          | Time (s) | Relative Performance\n");
+    printf("----------------------------------------------------------------\n");
+    printf("Nested Parallelism (2x2)        | %7.3f  | baseline\n", durationNested);
+    printf("Horizontal Division (4 threads) | %7.3f  | ", durationHorizontal);
     
-    printf("Image saved to %s\n", filename);
+    if (durationNested < durationHorizontal)
+    {
+        printf("%.2fx slower\n", durationHorizontal / durationNested);
+        printf("\nNested parallelism is FASTER by %.2fx\n", durationHorizontal / durationNested);
+    }
+    else
+    {
+        printf("%.2fx faster\n", durationNested / durationHorizontal);
+        printf("\nHorizontal division is FASTER by %.2fx\n", durationNested / durationHorizontal);
+    }
     
-    // Free memory
-    delete[] image;
-    
-    printf("\n=== Ulam Spiral Generation Complete ===\n");
-    printf("Prime numbers are colored by quadrant\n");
-    printf("Non-prime numbers are white/light gray\n");
-    printf("Each quadrant was processed by a separate thread\n");
+    printf("\n=== Analysis ===\n");
+    printf("Nested: 2x2 blocks using nested parallel regions\n");
+    printf("Horizontal: %d horizontal strips\n", TOTAL_THREADS);
+    printf("Both methods use %d total threads\n", TOTAL_THREADS);
     
     return 0;
 }
